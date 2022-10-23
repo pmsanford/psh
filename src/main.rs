@@ -1,10 +1,13 @@
 use std::{
     env,
     path::Path,
-    process::{Command, Stdio},
+    process::{Child, Command as OsCommand, Stdio},
 };
 
+mod parser;
+
 use anyhow::Result;
+use parser::parse_line;
 use rustyline::Editor;
 
 fn main() -> Result<()> {
@@ -19,38 +22,57 @@ fn main() -> Result<()> {
             Ok(i) => i,
         };
 
-        let mut parts = input_line.split_whitespace();
-        let cmd = parts.next().unwrap();
-        let args = parts.collect::<Vec<_>>();
+        let command_line = parse_line(&input_line)?;
+        let count = command_line.commands.len();
 
-        match cmd {
-            "cd" => {
-                let newpath = args
-                    .first()
-                    .map(|s| String::from(*s))
-                    .or_else(|| env::var("HOME").ok())
-                    .unwrap_or_else(|| String::from("/"));
-                let newpath = Path::new(&newpath);
-                if let Err(e) = env::set_current_dir(newpath) {
-                    eprintln!("{}", e);
-                }
-            }
-            "exit" => {
-                break;
-            }
-            "" => {}
-            _ => {
-                let output = Command::new(cmd)
-                    .args(args)
-                    .stdout(Stdio::inherit())
-                    .spawn();
+        let mut prev = None;
 
-                match output {
-                    Ok(mut output) => {
-                        output.wait()?;
-                    }
-                    Err(e) => {
+        for (idx, cmd) in command_line.commands.into_iter().enumerate() {
+            match cmd.command.as_str() {
+                "cd" => {
+                    let newpath = cmd
+                        .args
+                        .first()
+                        .cloned()
+                        .or_else(|| env::var("HOME").ok())
+                        .unwrap_or_else(|| String::from("/"));
+                    let newpath = Path::new(&newpath);
+                    if let Err(e) = env::set_current_dir(newpath) {
                         eprintln!("{}", e);
+                    }
+                }
+                "exit" => {
+                    break;
+                }
+                "" => {}
+                _ => {
+                    let last = idx + 1 == count;
+                    let stdin = prev.map_or(Stdio::inherit(), |out: Child| {
+                        Stdio::from(out.stdout.unwrap())
+                    });
+                    let stdout = if last {
+                        Stdio::inherit()
+                    } else {
+                        Stdio::piped()
+                    };
+                    let output = OsCommand::new(cmd.command)
+                        .args(cmd.args)
+                        .stdin(stdin)
+                        .stdout(stdout)
+                        .spawn();
+
+                    match (last, output) {
+                        (false, Ok(output)) => {
+                            prev = Some(output);
+                        }
+                        (true, Ok(mut output)) => {
+                            prev = None;
+                            output.wait()?;
+                        }
+                        (_, Err(e)) => {
+                            prev = None;
+                            eprintln!("{}", e);
+                        }
                     }
                 }
             }
