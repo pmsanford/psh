@@ -34,16 +34,12 @@ pub fn recurse_commands(pair: Pair<Rule>) -> Result<Command> {
                 .find(|p| p.as_rule() == Rule::command)
                 .cloned()
                 .unwrap();
-            let args = pairs
-                .iter()
-                .filter(|p| p.as_rule() == Rule::arg)
-                .cloned()
-                .collect::<Vec<_>>();
             Ok(Command::Simple {
                 command: cmd.as_str().to_owned(),
-                args: args
-                    .into_iter()
-                    .map(|arg| arg.as_str().to_owned())
+                args: pairs
+                    .iter()
+                    .filter(|p| p.as_rule() == Rule::arg)
+                    .map(|p| p.as_str().to_owned())
                     .collect(),
             })
         }

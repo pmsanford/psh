@@ -4,7 +4,7 @@ mod command;
 mod parser;
 
 use anyhow::Result;
-use parser::{parse_line, parse_pest};
+use parser::parse_pest;
 use rustyline::Editor;
 
 fn main() -> Result<()> {
