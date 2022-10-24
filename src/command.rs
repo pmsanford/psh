@@ -1,17 +1,21 @@
 use anyhow::Result;
 use std::{
     env,
+    io::Read,
     path::Path,
     process::{exit, Child, Command as OsCommand, Stdio},
 };
 
+use crate::parser::parse_line;
+
 pub enum Builtin {
     Cd { new_directory: Option<String> },
+    Set { key: String, value: String },
     Exit,
 }
 
 impl Builtin {
-    pub fn run(&self, stdout: Stdio) -> Result<()> {
+    pub fn run(&self, _stdout: Stdio) -> Result<()> {
         match self {
             Builtin::Cd { new_directory } => {
                 let new_directory = new_directory
@@ -22,6 +26,32 @@ impl Builtin {
                 if let Err(e) = env::set_current_dir(newpath) {
                     eprintln!("{}", e);
                 }
+            }
+            Builtin::Set { key, value } => {
+                let value = if value.starts_with("$(") {
+                    let cmd = value
+                        .chars()
+                        .skip(2)
+                        .take(value.len() - 3)
+                        .collect::<String>();
+                    let cmd = parse_line(&cmd)?;
+                    let stdout = Stdio::piped();
+                    let output = cmd.run(Stdio::null(), stdout)?;
+
+                    output
+                        .output
+                        .and_then(|mut output| output.stdout.take())
+                        .map(|mut stdout| {
+                            let mut val = String::new();
+                            stdout.read_to_string(&mut val)?;
+                            Ok::<String, anyhow::Error>(val)
+                        })
+                        .transpose()?
+                        .unwrap_or_default()
+                } else {
+                    value.to_owned()
+                };
+                env::set_var(key, value);
             }
             Builtin::Exit => exit(0),
         }
@@ -51,15 +81,18 @@ pub enum Command {
 
 pub struct CommandResult {
     pub output: Option<Child>,
-    pub stdout: Option<Stdio>,
 }
 
 impl CommandResult {
-    pub fn stdout(self) -> Stdio {
-        if let Some(stdout) = self.stdout {
-            return stdout;
-        }
-        Stdio::from(self.output.unwrap().stdout.unwrap())
+    pub fn stdout(&mut self) -> Option<Stdio> {
+        let mut output = self.output.take();
+        let stdio = if let Some(ref mut output) = output {
+            output.stdout.take().map(Stdio::from)
+        } else {
+            None
+        };
+        self.output = output;
+        stdio
     }
 }
 
@@ -68,17 +101,11 @@ impl Command {
         Ok(match self {
             Command::Builtin(builtin) => {
                 builtin.run(stdout)?;
-                CommandResult {
-                    output: None,
-                    stdout: Some(stdin),
-                }
+                CommandResult { output: None }
             }
             Command::Simple { command, args } => {
                 if command.is_empty() {
-                    return Ok(CommandResult {
-                        output: None,
-                        stdout: Some(stdin),
-                    });
+                    return Ok(CommandResult { output: None });
                 }
                 let output = OsCommand::new(command)
                     .args(args)
@@ -88,15 +115,11 @@ impl Command {
 
                 CommandResult {
                     output: Some(output),
-                    stdout: None,
                 }
             }
             Command::Pipeline { steps } => {
                 if steps.is_empty() {
-                    return Ok(CommandResult {
-                        output: None,
-                        stdout: Some(stdin),
-                    });
+                    return Ok(CommandResult { output: None });
                 }
                 let count = steps.len();
                 let mut stdin = stdin;
@@ -106,9 +129,9 @@ impl Command {
                         return command.run(stdin, stdout);
                     }
 
-                    let last = command.run(stdin, Stdio::piped())?;
+                    let mut last = command.run(stdin, Stdio::piped())?;
 
-                    stdin = last.stdout();
+                    stdin = last.stdout().unwrap_or_else(Stdio::null);
                 }
 
                 unreachable!()
