@@ -8,7 +8,11 @@ use parser::parse_line;
 use rustyline::Editor;
 
 fn main() -> Result<()> {
-    let mut rl = Editor::<()>::new()?;
+    let config = rustyline::Config::builder()
+        .max_history_size(100)
+        .auto_add_history(true)
+        .build();
+    let mut rl = Editor::<()>::with_config(config)?;
 
     loop {
         let result = rl.readline(">> ");
