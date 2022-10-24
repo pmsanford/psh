@@ -1,10 +1,9 @@
-use std::process::{exit, Child, Command as OsCommand, Stdio};
+use std::process::Stdio;
 
-mod builtins;
+mod command;
 mod parser;
 
 use anyhow::Result;
-use builtins::{is_exit, run_builtin};
 use parser::parse_line;
 use rustyline::Editor;
 
@@ -21,47 +20,17 @@ fn main() -> Result<()> {
         };
 
         let command_line = parse_line(&input_line)?;
-        let count = command_line.commands.len();
 
-        let mut prev = None;
+        let output = command_line.run(Stdio::inherit(), Stdio::inherit());
 
-        for (idx, cmd) in command_line.commands.into_iter().enumerate() {
-            if is_exit(&cmd)? {
-                exit(0);
-            }
-            if cmd.command.is_empty() {
-                continue;
-            }
-            if run_builtin(&cmd)? {
-                continue;
-            }
-            let last = idx + 1 == count;
-            let stdin = prev.map_or(Stdio::inherit(), |out: Child| {
-                Stdio::from(out.stdout.unwrap())
-            });
-            let stdout = if last {
-                Stdio::inherit()
-            } else {
-                Stdio::piped()
-            };
-            let output = OsCommand::new(cmd.command)
-                .args(cmd.args)
-                .stdin(stdin)
-                .stdout(stdout)
-                .spawn();
-
-            match (last, output) {
-                (false, Ok(output)) => {
-                    prev = Some(output);
-                }
-                (true, Ok(mut output)) => {
-                    prev = None;
+        match output {
+            Ok(output) => {
+                if let Some(mut output) = output.output {
                     output.wait()?;
                 }
-                (_, Err(e)) => {
-                    prev = None;
-                    eprintln!("{}", e);
-                }
+            }
+            Err(e) => {
+                eprintln!("{}", e);
             }
         }
     }

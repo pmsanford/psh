@@ -1,25 +1,24 @@
 use anyhow::Result;
 
-pub struct Command {
-    pub command: String,
-    pub args: Vec<String>,
-}
+use crate::command::{Builtin, Command};
 
-pub struct CommandLine {
-    pub commands: Vec<Command>,
-}
-
-pub fn parse_line(input_line: &str) -> Result<CommandLine> {
+pub fn parse_line(input_line: &str) -> Result<Command> {
     let pipelines = input_line.split('|');
-    let commands = pipelines
+    let steps = pipelines
         .map(|text| {
             let mut parts = text.split_whitespace();
             let command = parts.next().unwrap().to_owned();
             let args = parts.map(str::to_owned).collect::<Vec<_>>();
 
-            Command { command, args }
+            match command.as_str() {
+                "cd" => Command::Builtin(Builtin::Cd {
+                    new_directory: args.first().cloned().unwrap(),
+                }),
+                "exit" => Command::Builtin(Builtin::Exit),
+                _ => Command::Simple { command, args },
+            }
         })
         .collect::<Vec<_>>();
 
-    Ok(CommandLine { commands })
+    Ok(Command::Pipeline { steps })
 }
