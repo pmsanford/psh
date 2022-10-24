@@ -12,7 +12,7 @@ pub fn parse_line(input_line: &str) -> Result<Command> {
 
             match command.as_str() {
                 "cd" => Command::Builtin(Builtin::Cd {
-                    new_directory: args.first().cloned().unwrap(),
+                    new_directory: args.first().cloned(),
                 }),
                 "exit" => Command::Builtin(Builtin::Exit),
                 _ => Command::Simple { command, args },

@@ -6,7 +6,7 @@ use std::{
 };
 
 pub enum Builtin {
-    Cd { new_directory: String },
+    Cd { new_directory: Option<String> },
     Exit,
 }
 
@@ -14,6 +14,10 @@ impl Builtin {
     pub fn run(&self, stdout: Stdio) -> Result<()> {
         match self {
             Builtin::Cd { new_directory } => {
+                let new_directory = new_directory
+                    .clone()
+                    .or_else(|| env::var("HOME").ok())
+                    .unwrap_or_else(|| String::from("/"));
                 let newpath = Path::new(&new_directory);
                 if let Err(e) = env::set_current_dir(newpath) {
                     eprintln!("{}", e);
