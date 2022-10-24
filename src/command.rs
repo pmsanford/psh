@@ -22,6 +22,7 @@ impl Builtin {
                     .clone()
                     .or_else(|| env::var("HOME").ok())
                     .unwrap_or_else(|| String::from("/"));
+                let new_directory = sub_var(&new_directory);
                 let newpath = Path::new(&new_directory);
                 if let Err(e) = env::set_current_dir(newpath) {
                     eprintln!("{}", e);
@@ -51,7 +52,7 @@ impl Builtin {
                 } else {
                     value.to_owned()
                 };
-                env::set_var(key, value);
+                env::set_var(key, value.trim());
             }
             Builtin::Exit => exit(0),
         }
@@ -96,6 +97,15 @@ impl CommandResult {
     }
 }
 
+fn sub_var(arg: &str) -> String {
+    if arg.starts_with('$') {
+        let key = arg.chars().skip(1).collect::<String>();
+        env::var(key).ok().unwrap_or_default()
+    } else {
+        arg.to_owned()
+    }
+}
+
 impl Command {
     pub fn run(&self, stdin: Stdio, stdout: Stdio) -> Result<CommandResult> {
         Ok(match self {
@@ -107,6 +117,7 @@ impl Command {
                 if command.is_empty() {
                     return Ok(CommandResult { output: None });
                 }
+                let args = args.iter().map(|arg| sub_var(arg)).collect::<Vec<_>>();
                 let output = OsCommand::new(command)
                     .args(args)
                     .stdin(stdin)
