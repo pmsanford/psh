@@ -1,0 +1,16 @@
+special = { ("|" | "&&" | "||" | "$" | "(" | ")" | " " | "\"") }
+charsa = { 'a'..'z' | 'A'..'Z' | '0'..'9' | "\"" | "'" | "_" | "/" | "\\" }
+chars = { !special ~ ANY }
+litchars = { !"\"" ~ ANY }
+WHITESPACE = _{ " " }
+
+literal = { "\"" ~ litchars+ ~ "\"" }
+word = @{ chars+ }
+var = { "$" ~ word }
+subcmd = { "$(" ~ pipeline ~ ")" }
+command = { word }
+arg = { (word | literal | var | subcmd) }
+invocation = { command ~ (arg)* }
+binop = { "&&" | "||" }
+bin = { invocation ~ binop ~ invocation ~ (binop ~ invocation)* }
+pipeline = { (bin | invocation) ~ ("|" ~ (bin | invocation))* }

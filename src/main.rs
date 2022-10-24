@@ -4,7 +4,7 @@ mod command;
 mod parser;
 
 use anyhow::Result;
-use parser::parse_line;
+use parser::{parse_line, parse_pest};
 use rustyline::Editor;
 
 fn main() -> Result<()> {
@@ -23,7 +23,7 @@ fn main() -> Result<()> {
             Ok(i) => i,
         };
 
-        let command_line = parse_line(&input_line)?;
+        let command_line = parse_pest(&input_line)?;
 
         let output = command_line.run(Stdio::inherit(), Stdio::inherit());
 
