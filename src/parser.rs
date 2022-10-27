@@ -37,7 +37,7 @@ pub fn recurse_commands(pair: Pair<Rule>) -> Result<Command> {
         }
         Rule::bin => {
             let mut pairs = pair.into_inner().collect::<Vec<_>>();
-            assert!(pairs.len() % 2 == 1 && pairs.len() > 1);
+            assert!(pairs.len() % 2 == 1);
             let right = pairs.pop().unwrap();
             let mut right = recurse_commands(right)?;
             pairs.reverse();

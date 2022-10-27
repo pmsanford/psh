@@ -15,4 +15,4 @@ and = { "&&" }
 or = { "||" }
 binop = { and | or }
 pipeline = { invocation ~ ("|" ~ invocation)* }
-bin = { pipeline ~ binop ~ pipeline ~ (binop ~ pipeline)* }
+bin = { pipeline ~ (binop ~ pipeline)* }

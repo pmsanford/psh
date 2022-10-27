@@ -164,9 +164,9 @@ impl Command {
                 let output = lresult.output.unwrap().wait_with_output()?;
 
                 if output.status.success() {
-                    right.run(Stdio::null(), Stdio::inherit())?
-                } else {
                     CommandResult { output: None }
+                } else {
+                    right.run(Stdio::null(), Stdio::inherit())?
                 }
             }
         })
