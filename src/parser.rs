@@ -10,6 +10,10 @@ struct CliParser;
 
 pub fn parse_pest(input_line: &str) -> Result<Command> {
     let parsed = CliParser::parse(Rule::bin, input_line)?;
+    let parsed_len = parsed.as_str().len();
+    if parsed_len < input_line.len() {
+        anyhow::bail!("Syntax error");
+    }
 
     let pipe = parsed.into_iter().next().unwrap();
 

@@ -27,14 +27,20 @@ fn main() -> Result<()> {
             Ok(i) => i,
         };
 
-        let command_line = parse_pest(&input_line)?;
+        let command_line = parse_pest(&input_line);
+        match command_line {
+            Ok(command) => {
+                let output = command.run(Stdio::inherit(), Stdio::inherit());
 
-        let output = command_line.run(Stdio::inherit(), Stdio::inherit());
-
-        match output {
-            Ok(output) => {
-                if let Some(mut output) = output.output {
-                    output.wait()?;
+                match output {
+                    Ok(output) => {
+                        if let Some(mut output) = output.output {
+                            output.wait()?;
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("{}", e);
+                    }
                 }
             }
             Err(e) => {
