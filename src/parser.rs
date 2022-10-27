@@ -9,7 +9,7 @@ use crate::command::{Builtin, Command};
 struct CliParser;
 
 pub fn parse_pest(input_line: &str) -> Result<Command> {
-    let parsed = CliParser::parse(Rule::pipeline, input_line)?;
+    let parsed = CliParser::parse(Rule::bin, input_line)?;
 
     let pipe = parsed.into_iter().next().unwrap();
 
@@ -18,14 +18,6 @@ pub fn parse_pest(input_line: &str) -> Result<Command> {
 
 pub fn recurse_commands(pair: Pair<Rule>) -> Result<Command> {
     match pair.as_rule() {
-        Rule::special => unreachable!(),
-        Rule::charsa => unreachable!(),
-        Rule::chars => unreachable!(),
-        Rule::litchars => unreachable!(),
-        Rule::WHITESPACE => unreachable!(),
-        Rule::literal => unreachable!(),
-        Rule::word => unreachable!(),
-        Rule::var => unreachable!(),
         Rule::subcmd => todo!(),
         Rule::invocation => {
             let pairs = pair.into_inner().collect::<Vec<_>>();
@@ -43,10 +35,34 @@ pub fn recurse_commands(pair: Pair<Rule>) -> Result<Command> {
                     .collect(),
             })
         }
-        Rule::arg => unreachable!(),
-        Rule::command => unreachable!(),
-        Rule::binop => unreachable!(),
-        Rule::bin => todo!(),
+        Rule::bin => {
+            let mut pairs = pair.into_inner().collect::<Vec<_>>();
+            assert!(pairs.len() % 2 == 1 && pairs.len() > 1);
+            let right = pairs.pop().unwrap();
+            let mut right = recurse_commands(right)?;
+            pairs.reverse();
+
+            for chunk in pairs.chunks(2) {
+                let chunk = chunk.to_vec();
+                let op = chunk.get(0).unwrap().clone();
+                let left = chunk.get(1).unwrap().clone();
+                let left = recurse_commands(left)?;
+                let op = op.into_inner().into_iter().next().unwrap();
+                right = match op.as_rule() {
+                    Rule::and => Command::And {
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                    Rule::or => Command::Or {
+                        left: Box::new(left),
+                        right: Box::new(right),
+                    },
+                    _ => unreachable!(),
+                };
+            }
+
+            Ok(right)
+        }
         Rule::pipeline => {
             let mut steps = vec![];
             for child in pair.into_inner() {
@@ -55,6 +71,7 @@ pub fn recurse_commands(pair: Pair<Rule>) -> Result<Command> {
 
             Ok(Command::Pipeline { steps })
         }
+        _ => unreachable!(),
     }
 }
 

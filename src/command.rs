@@ -8,6 +8,7 @@ use std::{
 
 use crate::parser::parse_line;
 
+#[derive(Debug)]
 pub enum Builtin {
     Cd { new_directory: Option<String> },
     Set { key: String, value: String },
@@ -61,6 +62,7 @@ impl Builtin {
     }
 }
 
+#[derive(Debug)]
 pub enum Command {
     Builtin(Builtin),
     Simple {
@@ -147,8 +149,26 @@ impl Command {
 
                 unreachable!()
             }
-            Command::And { left, right } => todo!(),
-            Command::Or { left, right } => todo!(),
+            Command::And { left, right } => {
+                let lresult = left.run(stdin, Stdio::inherit())?;
+                let output = lresult.output.unwrap().wait_with_output()?;
+
+                if !output.status.success() {
+                    return Ok(CommandResult { output: None });
+                }
+
+                right.run(Stdio::null(), Stdio::inherit())?
+            }
+            Command::Or { left, right } => {
+                let lresult = left.run(stdin, Stdio::inherit())?;
+                let output = lresult.output.unwrap().wait_with_output()?;
+
+                if output.status.success() {
+                    right.run(Stdio::null(), Stdio::inherit())?
+                } else {
+                    CommandResult { output: None }
+                }
+            }
         })
     }
 }
