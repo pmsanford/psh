@@ -4,7 +4,8 @@ chars = { !special ~ ANY }
 litchars = { !"\"" ~ ANY }
 WHITESPACE = _{ " " }
 
-literal = { "\"" ~ litchars+ ~ "\"" }
+litcontent = @{ litchars+ }
+literal = { "\"" ~ litcontent ~ "\"" }
 word = @{ chars+ }
 var = { "$" ~ word }
 subcmd = { "$(" ~ pipeline ~ ")" }
