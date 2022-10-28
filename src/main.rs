@@ -1,11 +1,25 @@
-use std::process::Stdio;
+use std::{env, process::Stdio};
 
 mod command;
 mod parser;
 
 use anyhow::Result;
+use directories::UserDirs;
 use parser::parse_pest;
 use rustyline::Editor;
+
+fn path_prompt() -> Result<String> {
+    let ud = UserDirs::new().ok_or_else(|| anyhow::anyhow!("Couldn't find user dirs"))?;
+    let home = ud.home_dir();
+
+    let pwd = env::current_dir()?;
+
+    if pwd.starts_with(home) {
+        Ok(format!("~/{}", pwd.strip_prefix(home)?.to_string_lossy()))
+    } else {
+        Ok(pwd.to_string_lossy().to_string())
+    }
+}
 
 fn main() -> Result<()> {
     let config = rustyline::Config::builder()
@@ -18,7 +32,8 @@ fn main() -> Result<()> {
     rl.load_history(".history")?;
 
     loop {
-        let result = rl.readline(">> ");
+        let pwd = path_prompt()?;
+        let result = rl.readline(&format!("> {} > ", pwd));
         rl.save_history(".history")?;
 
         let input_line = match result {
