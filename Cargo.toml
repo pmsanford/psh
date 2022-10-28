@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.66"
 directories = "4.0.1"
+owo-colors = "3.5.0"
 pest = "2.4.0"
 pest_derive = "2.4.0"
 rustyline = "10.0.0"
