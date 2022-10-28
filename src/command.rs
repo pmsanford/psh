@@ -1,26 +1,18 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::{
     env,
-    io::Read,
     path::Path,
     process::{exit, Child, Command as OsCommand, Stdio},
 };
 
-use crate::parser::parse_line;
-
-#[derive(Debug)]
-pub enum Builtin {
-    Cd { new_directory: Option<String> },
-    Set { key: String, value: String },
-    Exit,
-}
-
-impl Builtin {
-    pub fn run(&self, _stdout: Stdio) -> Result<()> {
-        match self {
-            Builtin::Cd { new_directory } => {
+fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
+    Ok(match command {
+        Command::Simple { command, args } => match command.as_str() {
+            "cd" => {
+                let new_directory = args.first();
                 let new_directory = new_directory
-                    .clone()
+                    .map(eval_arg)
+                    .transpose()?
                     .or_else(|| env::var("HOME").ok())
                     .unwrap_or_else(|| String::from("/"));
                 let new_directory = sub_var(&new_directory);
@@ -28,46 +20,46 @@ impl Builtin {
                 if let Err(e) = env::set_current_dir(newpath) {
                     eprintln!("{}", e);
                 }
-            }
-            Builtin::Set { key, value } => {
-                let value = if value.starts_with("$(") {
-                    let cmd = value
-                        .chars()
-                        .skip(2)
-                        .take(value.len() - 3)
-                        .collect::<String>();
-                    let cmd = parse_line(&cmd)?;
-                    let stdout = Stdio::piped();
-                    let output = cmd.run(Stdio::null(), stdout)?;
 
-                    output
-                        .output
-                        .and_then(|mut output| output.stdout.take())
-                        .map(|mut stdout| {
-                            let mut val = String::new();
-                            stdout.read_to_string(&mut val)?;
-                            Ok::<String, anyhow::Error>(val)
-                        })
-                        .transpose()?
-                        .unwrap_or_default()
+                Some(CommandResult { output: None })
+            }
+            "set" => {
+                let mut args = args.iter();
+                let key = args
+                    .next()
+                    .ok_or_else(|| anyhow::anyhow!("Set requires a key and value"))?;
+                if let Arg::String { arg_string: key } = key {
+                    let value = args
+                        .next()
+                        .ok_or_else(|| anyhow::anyhow!("Set requires a key and value"))?;
+                    let value = eval_arg(value)?;
+                    env::set_var(key, value.trim());
                 } else {
-                    value.to_owned()
-                };
-                env::set_var(key, value.trim());
+                    bail!("Key must be a string");
+                }
+                Some(CommandResult { output: None })
             }
-            Builtin::Exit => exit(0),
-        }
+            "exit" => {
+                exit(0);
+            }
+            _ => None,
+        },
+        _ => None,
+    })
+}
 
-        Ok(())
-    }
+#[derive(Debug)]
+pub enum Arg {
+    String { arg_string: String },
+    Env { var_name: String },
+    Subcommand { command: Command },
 }
 
 #[derive(Debug)]
 pub enum Command {
-    Builtin(Builtin),
     Simple {
         command: String,
-        args: Vec<String>,
+        args: Vec<Arg>,
     },
     Pipeline {
         steps: Vec<Command>,
@@ -108,18 +100,39 @@ fn sub_var(arg: &str) -> String {
     }
 }
 
+fn eval_arg(arg: &Arg) -> Result<String> {
+    Ok(match arg {
+        Arg::String { arg_string } => arg_string.clone(),
+        Arg::Env { var_name } => env::var(var_name)?,
+        Arg::Subcommand { command } => {
+            let output = command
+                .run(Stdio::null(), Stdio::piped())?
+                .output
+                .ok_or_else(|| anyhow::anyhow!("Error running subcomand"))?
+                .wait_with_output()?;
+
+            if !output.status.success() {
+                bail!("Error running subcommand");
+            }
+
+            let out_str = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+
+            out_str
+        }
+    })
+}
+
 impl Command {
     pub fn run(&self, stdin: Stdio, stdout: Stdio) -> Result<CommandResult> {
         Ok(match self {
-            Command::Builtin(builtin) => {
-                builtin.run(stdout)?;
-                CommandResult { output: None }
-            }
             Command::Simple { command, args } => {
                 if command.is_empty() {
                     return Ok(CommandResult { output: None });
                 }
-                let args = args.iter().map(|arg| sub_var(arg)).collect::<Vec<_>>();
+                if let Some(result) = run_builtin(self)? {
+                    return Ok(result);
+                }
+                let args = args.iter().map(eval_arg).collect::<Result<Vec<_>>>()?;
                 let output = OsCommand::new(command)
                     .args(args)
                     .stdin(stdin)

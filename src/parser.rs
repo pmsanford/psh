@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use pest::{iterators::Pair, Parser};
 use pest_derive::Parser;
 
-use crate::command::{Builtin, Command};
+use crate::command::{Arg, Command};
 
 #[derive(Parser)]
 #[grammar = "cli.pest"]
@@ -20,6 +20,39 @@ pub fn parse_pest(input_line: &str) -> Result<Command> {
     recurse_commands(pipe)
 }
 
+fn recurse_args(pair: Pair<Rule>) -> Result<Arg> {
+    let pair = pair.into_inner().into_iter().next().unwrap();
+    Ok(match pair.as_rule() {
+        Rule::subcmd => {
+            let pipe = pair.into_inner().into_iter().next().unwrap();
+            let pipe = recurse_commands(pipe)?;
+            Arg::Subcommand { command: pipe }
+        }
+        Rule::var => Arg::Env {
+            var_name: pair
+                .into_inner()
+                .into_iter()
+                .next()
+                .unwrap()
+                .as_str()
+                .to_owned(),
+        },
+        Rule::literal => Arg::String {
+            arg_string: pair
+                .into_inner()
+                .into_iter()
+                .next()
+                .unwrap()
+                .as_str()
+                .to_owned(),
+        },
+        Rule::word => Arg::String {
+            arg_string: pair.as_str().to_owned(),
+        },
+        _ => unreachable!(),
+    })
+}
+
 pub fn recurse_commands(pair: Pair<Rule>) -> Result<Command> {
     match pair.as_rule() {
         Rule::subcmd => todo!(),
@@ -30,13 +63,15 @@ pub fn recurse_commands(pair: Pair<Rule>) -> Result<Command> {
                 .find(|p| p.as_rule() == Rule::command)
                 .cloned()
                 .unwrap();
+            let args = pairs
+                .iter()
+                .filter(|p| p.as_rule() == Rule::arg)
+                .cloned()
+                .map(recurse_args)
+                .collect::<Result<Vec<_>>>()?;
             Ok(Command::Simple {
                 command: cmd.as_str().to_owned(),
-                args: pairs
-                    .iter()
-                    .filter(|p| p.as_rule() == Rule::arg)
-                    .map(|p| p.as_str().to_owned())
-                    .collect(),
+                args,
             })
         }
         Rule::bin => {
@@ -77,36 +112,4 @@ pub fn recurse_commands(pair: Pair<Rule>) -> Result<Command> {
         }
         _ => unreachable!(),
     }
-}
-
-pub fn parse_line(input_line: &str) -> Result<Command> {
-    let pipelines = input_line.split('|');
-    let steps = pipelines
-        .map(|text| {
-            let mut parts = text.split_whitespace();
-            let command = parts.next().unwrap().to_owned();
-            let args = parts.map(str::to_owned).collect::<Vec<_>>();
-
-            Ok(match command.as_str() {
-                "cd" => Command::Builtin(Builtin::Cd {
-                    new_directory: args.first().cloned(),
-                }),
-                "exit" => Command::Builtin(Builtin::Exit),
-                "set" => {
-                    let key = args
-                        .get(0)
-                        .cloned()
-                        .ok_or_else(|| anyhow!("Set requires a key and value"))?;
-                    let value = args
-                        .get(1)
-                        .cloned()
-                        .ok_or_else(|| anyhow!("Set requires a key and value"))?;
-                    Command::Builtin(Builtin::Set { key, value })
-                }
-                _ => Command::Simple { command, args },
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-
-    Ok(Command::Pipeline { steps })
 }
