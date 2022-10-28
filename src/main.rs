@@ -40,10 +40,11 @@ fn main() -> Result<()> {
     let mut history = PathBuf::from(ud.home_dir());
     history.push(".psh_history");
     rl.load_history(&history)?;
+    let mut prompt_extra = String::from("");
 
     loop {
         let pwd = path_prompt()?;
-        let result = rl.readline(&format!("> {} > ", pwd));
+        let result = rl.readline(&format!("> {} >{} ", pwd, prompt_extra));
         rl.save_history(&history)?;
 
         let input_line = match result {
@@ -60,7 +61,13 @@ fn main() -> Result<()> {
                 match output {
                     Ok(output) => {
                         if let Some(mut output) = output.output {
-                            output.wait()?;
+                            let exit = output.wait()?;
+                            if exit.success() {
+                                prompt_extra = String::from("");
+                            } else {
+                                let code = exit.code().unwrap();
+                                prompt_extra = format!("{}>", code.white().on_red());
+                            }
                         }
                     }
                     Err(e) => {
