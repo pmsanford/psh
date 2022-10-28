@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use std::{
     env,
+    fs::File,
     path::Path,
     process::{exit, Child, Command as OsCommand, Stdio},
 };
@@ -63,6 +64,7 @@ pub enum Command {
     },
     Pipeline {
         steps: Vec<Command>,
+        redirect: Option<String>,
     },
     And {
         left: Box<Command>,
@@ -143,7 +145,7 @@ impl Command {
                     output: Some(output),
                 }
             }
-            Command::Pipeline { steps } => {
+            Command::Pipeline { steps, redirect } => {
                 if steps.is_empty() {
                     return Ok(CommandResult { output: None });
                 }
@@ -152,6 +154,11 @@ impl Command {
                 for (idx, command) in steps.iter().enumerate() {
                     let end = idx + 1 == count;
                     if end {
+                        if let Some(redirect) = redirect {
+                            let file = File::create(redirect)?;
+                            let fileout = Stdio::from(file);
+                            return command.run(stdin, fileout);
+                        }
                         return command.run(stdin, stdout);
                     }
 

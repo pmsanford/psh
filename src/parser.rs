@@ -104,11 +104,29 @@ pub fn recurse_commands(pair: Pair<Rule>) -> Result<Command> {
         }
         Rule::pipeline => {
             let mut steps = vec![];
-            for child in pair.into_inner() {
+            let inner = pair.into_inner().into_iter().collect::<Vec<_>>();
+            for child in inner
+                .iter()
+                .filter(|p| p.as_rule() == Rule::invocation)
+                .cloned()
+            {
                 steps.push(recurse_commands(child)?);
             }
 
-            Ok(Command::Pipeline { steps })
+            let redirect = inner
+                .iter()
+                .find(|p| p.as_rule() == Rule::redirect)
+                .map(|p| {
+                    p.clone()
+                        .into_inner()
+                        .into_iter()
+                        .next()
+                        .unwrap()
+                        .as_str()
+                        .to_owned()
+                });
+
+            Ok(Command::Pipeline { steps, redirect })
         }
         _ => unreachable!(),
     }
