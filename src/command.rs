@@ -171,20 +171,24 @@ impl Command {
             }
             Command::And { left, right } => {
                 let lresult = left.run(stdin, Stdio::inherit())?;
-                let output = lresult.output.unwrap().wait_with_output()?;
+                let mut output = lresult.output.unwrap();
 
-                if !output.status.success() {
-                    return Ok(CommandResult { output: None });
+                if !output.wait()?.success() {
+                    return Ok(CommandResult {
+                        output: Some(output),
+                    });
                 }
 
                 right.run(Stdio::null(), Stdio::inherit())?
             }
             Command::Or { left, right } => {
                 let lresult = left.run(stdin, Stdio::inherit())?;
-                let output = lresult.output.unwrap().wait_with_output()?;
+                let mut output = lresult.output.unwrap();
 
-                if output.status.success() {
-                    CommandResult { output: None }
+                if output.wait()?.success() {
+                    CommandResult {
+                        output: Some(output),
+                    }
                 } else {
                     right.run(Stdio::null(), Stdio::inherit())?
                 }
