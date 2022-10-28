@@ -1,13 +1,16 @@
-use std::{env, path::PathBuf, process::Stdio};
+use std::{collections::HashMap, env, fs::File, io::Read, path::PathBuf, process::Stdio};
 
 mod command;
 mod parser;
 
 use anyhow::Result;
-use directories::UserDirs;
+use directories::{ProjectDirs, UserDirs};
+use once_cell::sync::OnceCell;
 use owo_colors::OwoColorize;
 use parser::parse_pest;
 use rustyline::Editor;
+
+static ALIASES: OnceCell<HashMap<String, String>> = OnceCell::new();
 
 fn path_prompt() -> Result<String> {
     let ud = UserDirs::new().ok_or_else(|| anyhow::anyhow!("Couldn't find user dirs"))?;
@@ -28,6 +31,32 @@ fn path_prompt() -> Result<String> {
     }
 }
 
+fn load_aliases() -> Result<()> {
+    let pd = ProjectDirs::from("net", "paulsanford", "psh").expect("project dirs");
+    let mut aliases = PathBuf::from(pd.config_dir());
+    aliases.push("aliases");
+
+    if !aliases.exists() {
+        ALIASES.set(HashMap::new()).unwrap();
+        return Ok(());
+    }
+
+    let mut file = File::open(aliases)?;
+    let mut cont = String::new();
+    file.read_to_string(&mut cont)?;
+
+    let mut hm = HashMap::new();
+
+    for line in cont.lines() {
+        let (alias, cmd) = line.split_once(' ').unwrap();
+        hm.insert(alias.to_owned(), cmd.to_owned());
+    }
+
+    ALIASES.set(hm).unwrap();
+
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let config = rustyline::Config::builder()
         .max_history_size(100)
@@ -41,6 +70,7 @@ fn main() -> Result<()> {
     history.push(".psh_history");
     rl.load_history(&history)?;
     let mut prompt_extra = String::from("");
+    load_aliases()?;
 
     loop {
         let pwd = path_prompt()?;

@@ -6,6 +6,8 @@ use std::{
     process::{exit, Child, Command as OsCommand, Stdio},
 };
 
+use crate::ALIASES;
+
 fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
     Ok(match command {
         Command::Simple { command, args } => match command.as_str() {
@@ -135,6 +137,7 @@ impl Command {
                     return Ok(result);
                 }
                 let args = args.iter().map(eval_arg).collect::<Result<Vec<_>>>()?;
+                let command = ALIASES.get().unwrap().get(command).unwrap_or(command);
                 let output = OsCommand::new(command)
                     .args(args)
                     .stdin(stdin)

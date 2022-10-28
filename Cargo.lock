@@ -309,6 +309,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "directories",
+ "once_cell",
  "owo-colors",
  "pest",
  "pest_derive",
