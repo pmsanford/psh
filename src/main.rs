@@ -7,14 +7,11 @@ mod state;
 use anyhow::Result;
 use directories::{ProjectDirs, UserDirs};
 use once_cell::sync::OnceCell;
-use owo_colors::{Color, OwoColorize};
+use owo_colors::OwoColorize;
 use parser::{parse_alias, parse_pest};
 use rustyline::{
-    completion::{Completer, FilenameCompleter},
-    highlight::Highlighter,
-    hint::{Hinter, HistoryHinter},
-    validate::Validator,
-    CompletionType, Editor, Helper,
+    completion::FilenameCompleter, highlight::Highlighter, hint::HistoryHinter, CompletionType,
+    Editor,
 };
 use rustyline_derive::{Completer, Helper, Highlighter, Hinter, Validator};
 use state::{Alias, State};

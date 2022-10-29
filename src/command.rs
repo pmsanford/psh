@@ -57,7 +57,7 @@ fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
 
                 let aliasdef = Alias {
                     alias: alias.to_owned(),
-                    command: command.to_owned(),
+                    command,
                     args,
                 };
 

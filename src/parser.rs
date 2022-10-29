@@ -26,7 +26,7 @@ pub fn parse_pest(input_line: &str) -> Result<Command> {
     recurse_commands(pipe)
 }
 
-fn get_rule<'a>(pairs: &'a Vec<Pair<Rule>>, rule: Rule) -> Result<Pair<'a, Rule>> {
+fn get_rule<'a>(pairs: &'a [Pair<Rule>], rule: Rule) -> Result<Pair<'a, Rule>> {
     pairs
         .iter()
         .find(|p| p.as_rule() == rule)
@@ -34,7 +34,7 @@ fn get_rule<'a>(pairs: &'a Vec<Pair<Rule>>, rule: Rule) -> Result<Pair<'a, Rule>
         .ok_or_else(|| anyhow::anyhow!("couldn't find rule {:?}", rule))
 }
 
-fn get_rules<'a>(pairs: &'a Vec<Pair<Rule>>, rule: Rule) -> Vec<Pair<'a, Rule>> {
+fn get_rules<'a>(pairs: &'a [Pair<Rule>], rule: Rule) -> Vec<Pair<'a, Rule>> {
     pairs
         .iter()
         .filter(|p| p.as_rule() == rule)
