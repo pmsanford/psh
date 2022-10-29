@@ -17,3 +17,6 @@ or = { "||" }
 binop = { and | or }
 pipeline = { invocation ~ ("|" ~ invocation)* ~ redirect? }
 bin = { pipeline ~ (binop ~ pipeline)* }
+
+alias = { word }
+aliasdef = { alias ~ invocation }

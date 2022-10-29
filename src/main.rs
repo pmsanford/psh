@@ -2,15 +2,17 @@ use std::{collections::HashMap, env, fs::File, io::Read, path::PathBuf, process:
 
 mod command;
 mod parser;
+mod state;
 
 use anyhow::Result;
 use directories::{ProjectDirs, UserDirs};
 use once_cell::sync::OnceCell;
 use owo_colors::OwoColorize;
-use parser::parse_pest;
-use rustyline::Editor;
+use parser::{parse_alias, parse_pest};
+use rustyline::{CompletionType, Editor};
+use state::{Alias, State};
 
-static ALIASES: OnceCell<HashMap<String, String>> = OnceCell::new();
+static STATE: OnceCell<State> = OnceCell::new();
 
 fn path_prompt() -> Result<String> {
     let ud = UserDirs::new().ok_or_else(|| anyhow::anyhow!("Couldn't find user dirs"))?;
@@ -31,14 +33,18 @@ fn path_prompt() -> Result<String> {
     }
 }
 
-fn load_aliases() -> Result<()> {
+fn load_state() -> Result<State> {
+    let aliases = load_aliases()?;
+    Ok(State { aliases })
+}
+
+fn load_aliases() -> Result<HashMap<String, Alias>> {
     let pd = ProjectDirs::from("net", "paulsanford", "psh").expect("project dirs");
     let mut aliases = PathBuf::from(pd.config_dir());
     aliases.push("aliases");
 
     if !aliases.exists() {
-        ALIASES.set(HashMap::new()).unwrap();
-        return Ok(());
+        return Ok(HashMap::new());
     }
 
     let mut file = File::open(aliases)?;
@@ -48,13 +54,11 @@ fn load_aliases() -> Result<()> {
     let mut hm = HashMap::new();
 
     for line in cont.lines() {
-        let (alias, cmd) = line.split_once(' ').unwrap();
-        hm.insert(alias.to_owned(), cmd.to_owned());
+        let alias = parse_alias(line)?;
+        hm.insert(alias.alias.clone(), alias);
     }
 
-    ALIASES.set(hm).unwrap();
-
-    Ok(())
+    Ok(hm)
 }
 
 fn main() -> Result<()> {
@@ -63,6 +67,7 @@ fn main() -> Result<()> {
         .auto_add_history(true)
         .history_ignore_space(true)
         .history_ignore_dups(true)
+        .completion_type(CompletionType::List)
         .build();
     let mut rl = Editor::<()>::with_config(config)?;
     let ud = UserDirs::new().expect("user dirs");
@@ -70,7 +75,7 @@ fn main() -> Result<()> {
     history.push(".psh_history");
     rl.load_history(&history)?;
     let mut prompt_extra = String::from("");
-    load_aliases()?;
+    STATE.set(load_state()?);
 
     loop {
         let pwd = path_prompt()?;

@@ -6,7 +6,7 @@ use std::{
     process::{exit, Child, Command as OsCommand, Stdio},
 };
 
-use crate::ALIASES;
+use crate::STATE;
 
 fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
     Ok(match command {
@@ -51,14 +51,14 @@ fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Arg {
     String { arg_string: String },
     Env { var_name: String },
     Subcommand { command: Command },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Command {
     Simple {
         command: String,
@@ -136,8 +136,15 @@ impl Command {
                 if let Some(result) = run_builtin(self)? {
                     return Ok(result);
                 }
+                let (command, args) = if let Some(alias) = STATE.get().unwrap().aliases.get(command)
+                {
+                    let mut merged_args = alias.args.clone();
+                    merged_args.append(&mut args.clone());
+                    (alias.command.clone(), merged_args)
+                } else {
+                    (command.clone(), args.clone())
+                };
                 let args = args.iter().map(eval_arg).collect::<Result<Vec<_>>>()?;
-                let command = ALIASES.get().unwrap().get(command).unwrap_or(command);
                 let output = OsCommand::new(command)
                     .args(args)
                     .stdin(stdin)
