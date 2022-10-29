@@ -1,6 +1,7 @@
 use anyhow::{bail, Result};
 use std::{
     env,
+    fmt::Display,
     fs::File,
     path::Path,
     process::{exit, Child, Command as OsCommand, Stdio},
@@ -44,8 +45,8 @@ fn run_builtin(command: &Command, state: &mut State) -> Result<Option<CommandRes
             }
             "alias" => {
                 if args.len() < 2 {
-                    for alias in state.aliases.iter() {
-                        println!("Alias: {:?}", alias);
+                    for (_, alias) in state.aliases.iter() {
+                        println!("{}", alias.display());
                     }
                     return Ok(Some(CommandResult { output: None }));
                 }
@@ -78,6 +79,16 @@ pub enum Arg {
     String { arg_string: String },
     Env { var_name: String },
     Subcommand { command: Command },
+}
+
+impl Display for Arg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Arg::String { arg_string } => arg_string.fmt(f),
+            Arg::Env { var_name } => var_name.fmt(f),
+            Arg::Subcommand { command } => f.write_fmt(format_args!("{:?}", command)),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -158,15 +169,17 @@ impl Command {
                 if let Some(result) = run_builtin(self, state)? {
                     return Ok(result);
                 }
-                let (command, args) =
-                    if let Some(alias) = state.aliases.get(command) {
-                        let mut merged_args = alias.args.clone();
-                        merged_args.append(&mut args.clone());
-                        (alias.command.clone(), merged_args)
-                    } else {
-                        (command.clone(), args.clone())
-                    };
-                let args = args.iter().map(|a| eval_arg(a, state)).collect::<Result<Vec<_>>>()?;
+                let (command, args) = if let Some(alias) = state.aliases.get(command) {
+                    let mut merged_args = alias.args.clone();
+                    merged_args.append(&mut args.clone());
+                    (alias.command.clone(), merged_args)
+                } else {
+                    (command.clone(), args.clone())
+                };
+                let args = args
+                    .iter()
+                    .map(|a| eval_arg(a, state))
+                    .collect::<Result<Vec<_>>>()?;
                 let output = OsCommand::new(command)
                     .args(args)
                     .stdin(stdin)
