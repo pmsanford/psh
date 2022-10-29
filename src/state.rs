@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 use crate::command::Arg;
 
@@ -11,4 +11,5 @@ pub struct Alias {
 
 pub struct State {
     pub aliases: HashMap<String, Alias>,
+    pub history_path: PathBuf,
 }

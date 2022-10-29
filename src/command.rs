@@ -6,15 +6,15 @@ use std::{
     process::{exit, Child, Command as OsCommand, Stdio},
 };
 
-use crate::{state::Alias, STATE};
+use crate::state::{Alias, State};
 
-fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
+fn run_builtin(command: &Command, state: &mut State) -> Result<Option<CommandResult>> {
     Ok(match command {
         Command::Simple { command, args } => match command.as_str() {
             "cd" => {
                 let new_directory = args.first();
                 let new_directory = new_directory
-                    .map(eval_arg)
+                    .map(|a| eval_arg(a, state))
                     .transpose()?
                     .or_else(|| env::var("HOME").ok())
                     .unwrap_or_else(|| String::from("/"));
@@ -35,7 +35,7 @@ fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
                     let value = args
                         .next()
                         .ok_or_else(|| anyhow::anyhow!("Set requires a key and value"))?;
-                    let value = eval_arg(value)?;
+                    let value = eval_arg(value, state)?;
                     env::set_var(key, value.trim());
                 } else {
                     bail!("Key must be a string");
@@ -44,15 +44,14 @@ fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
             }
             "alias" => {
                 if args.len() < 2 {
-                    let aliases = unsafe { &STATE.get().unwrap().aliases };
-                    for alias in aliases {
+                    for alias in state.aliases.iter() {
                         println!("Alias: {:?}", alias);
                     }
                     return Ok(Some(CommandResult { output: None }));
                 }
                 let mut args = args.iter();
-                let alias = eval_arg(args.next().unwrap())?;
-                let command = eval_arg(args.next().unwrap())?;
+                let alias = eval_arg(args.next().unwrap(), state)?;
+                let command = eval_arg(args.next().unwrap(), state)?;
                 let args = args.cloned().collect();
 
                 let aliasdef = Alias {
@@ -61,7 +60,7 @@ fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
                     args,
                 };
 
-                unsafe { STATE.get_mut().unwrap().aliases.insert(alias, aliasdef) };
+                state.aliases.insert(alias, aliasdef);
 
                 Some(CommandResult { output: None })
             }
@@ -127,13 +126,13 @@ fn sub_var(arg: &str) -> String {
     }
 }
 
-fn eval_arg(arg: &Arg) -> Result<String> {
+fn eval_arg(arg: &Arg, state: &mut State) -> Result<String> {
     Ok(match arg {
         Arg::String { arg_string } => arg_string.clone(),
         Arg::Env { var_name } => env::var(var_name)?,
         Arg::Subcommand { command } => {
             let output = command
-                .run(Stdio::null(), Stdio::piped())?
+                .run(Stdio::null(), Stdio::piped(), state)?
                 .output
                 .ok_or_else(|| anyhow::anyhow!("Error running subcomand"))?
                 .wait_with_output()?;
@@ -150,24 +149,24 @@ fn eval_arg(arg: &Arg) -> Result<String> {
 }
 
 impl Command {
-    pub fn run(&self, stdin: Stdio, stdout: Stdio) -> Result<CommandResult> {
+    pub fn run(&self, stdin: Stdio, stdout: Stdio, state: &mut State) -> Result<CommandResult> {
         Ok(match self {
             Command::Simple { command, args } => {
                 if command.is_empty() {
                     return Ok(CommandResult { output: None });
                 }
-                if let Some(result) = run_builtin(self)? {
+                if let Some(result) = run_builtin(self, state)? {
                     return Ok(result);
                 }
                 let (command, args) =
-                    if let Some(alias) = unsafe { STATE.get().unwrap().aliases.get(command) } {
+                    if let Some(alias) = state.aliases.get(command) {
                         let mut merged_args = alias.args.clone();
                         merged_args.append(&mut args.clone());
                         (alias.command.clone(), merged_args)
                     } else {
                         (command.clone(), args.clone())
                     };
-                let args = args.iter().map(eval_arg).collect::<Result<Vec<_>>>()?;
+                let args = args.iter().map(|a| eval_arg(a, state)).collect::<Result<Vec<_>>>()?;
                 let output = OsCommand::new(command)
                     .args(args)
                     .stdin(stdin)
@@ -190,12 +189,12 @@ impl Command {
                         if let Some(redirect) = redirect {
                             let file = File::create(redirect)?;
                             let fileout = Stdio::from(file);
-                            return command.run(stdin, fileout);
+                            return command.run(stdin, fileout, state);
                         }
-                        return command.run(stdin, stdout);
+                        return command.run(stdin, stdout, state);
                     }
 
-                    let mut last = command.run(stdin, Stdio::piped())?;
+                    let mut last = command.run(stdin, Stdio::piped(), state)?;
 
                     stdin = last.stdout().unwrap_or_else(Stdio::null);
                 }
@@ -203,7 +202,7 @@ impl Command {
                 unreachable!()
             }
             Command::And { left, right } => {
-                let lresult = left.run(stdin, Stdio::inherit())?;
+                let lresult = left.run(stdin, Stdio::inherit(), state)?;
                 let mut output = lresult.output.unwrap();
 
                 if !output.wait()?.success() {
@@ -212,10 +211,10 @@ impl Command {
                     });
                 }
 
-                right.run(Stdio::null(), Stdio::inherit())?
+                right.run(Stdio::null(), Stdio::inherit(), state)?
             }
             Command::Or { left, right } => {
-                let lresult = left.run(stdin, Stdio::inherit())?;
+                let lresult = left.run(stdin, Stdio::inherit(), state)?;
                 let mut output = lresult.output.unwrap();
 
                 if output.wait()?.success() {
@@ -223,7 +222,7 @@ impl Command {
                         output: Some(output),
                     }
                 } else {
-                    right.run(Stdio::null(), Stdio::inherit())?
+                    right.run(Stdio::null(), Stdio::inherit(), state)?
                 }
             }
         })
