@@ -9,7 +9,14 @@ use directories::{ProjectDirs, UserDirs};
 use once_cell::sync::OnceCell;
 use owo_colors::OwoColorize;
 use parser::{parse_alias, parse_pest};
-use rustyline::{CompletionType, Editor};
+use rustyline::{
+    completion::{Completer, FilenameCompleter},
+    highlight::Highlighter,
+    hint::Hinter,
+    validate::Validator,
+    CompletionType, Editor, Helper,
+};
+use rustyline_derive::{Completer, Helper, Highlighter, Hinter, Validator};
 use state::{Alias, State};
 
 static mut STATE: OnceCell<State> = OnceCell::new();
@@ -61,6 +68,12 @@ fn load_aliases() -> Result<HashMap<String, Alias>> {
     Ok(hm)
 }
 
+#[derive(Completer, Helper, Validator, Highlighter, Hinter)]
+struct PshHelper {
+    #[rustyline(Completer)]
+    completer: FilenameCompleter,
+}
+
 fn main() -> Result<()> {
     let config = rustyline::Config::builder()
         .max_history_size(100)
@@ -69,7 +82,11 @@ fn main() -> Result<()> {
         .history_ignore_dups(true)
         .completion_type(CompletionType::List)
         .build();
-    let mut rl = Editor::<()>::with_config(config)?;
+    let h = PshHelper {
+        completer: FilenameCompleter::new(),
+    };
+    let mut rl = Editor::<PshHelper>::with_config(config)?;
+    rl.set_helper(Some(h));
     let ud = UserDirs::new().expect("user dirs");
     let mut history = PathBuf::from(ud.home_dir());
     history.push(".psh_history");
