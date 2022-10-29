@@ -7,12 +7,12 @@ mod state;
 use anyhow::Result;
 use directories::{ProjectDirs, UserDirs};
 use once_cell::sync::OnceCell;
-use owo_colors::OwoColorize;
+use owo_colors::{Color, OwoColorize};
 use parser::{parse_alias, parse_pest};
 use rustyline::{
     completion::{Completer, FilenameCompleter},
     highlight::Highlighter,
-    hint::Hinter,
+    hint::{Hinter, HistoryHinter},
     validate::Validator,
     CompletionType, Editor, Helper,
 };
@@ -72,6 +72,18 @@ fn load_aliases() -> Result<HashMap<String, Alias>> {
 struct PshHelper {
     #[rustyline(Completer)]
     completer: FilenameCompleter,
+    #[rustyline(Hinter)]
+    hinter: HistoryHinter,
+    #[rustyline(Highlighter)]
+    highlighter: PshHighlighter,
+}
+
+struct PshHighlighter;
+
+impl Highlighter for PshHighlighter {
+    fn highlight_hint<'h>(&self, hint: &'h str) -> std::borrow::Cow<'h, str> {
+        std::borrow::Cow::Owned(format!("{}", hint.truecolor(75, 75, 75)))
+    }
 }
 
 fn main() -> Result<()> {
@@ -84,6 +96,8 @@ fn main() -> Result<()> {
         .build();
     let h = PshHelper {
         completer: FilenameCompleter::new(),
+        hinter: HistoryHinter {},
+        highlighter: PshHighlighter,
     };
     let mut rl = Editor::<PshHelper>::with_config(config)?;
     rl.set_helper(Some(h));
