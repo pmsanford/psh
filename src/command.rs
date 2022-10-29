@@ -6,7 +6,7 @@ use std::{
     process::{exit, Child, Command as OsCommand, Stdio},
 };
 
-use crate::STATE;
+use crate::{state::Alias, STATE};
 
 fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
     Ok(match command {
@@ -40,6 +40,29 @@ fn run_builtin(command: &Command) -> Result<Option<CommandResult>> {
                 } else {
                     bail!("Key must be a string");
                 }
+                Some(CommandResult { output: None })
+            }
+            "alias" => {
+                if args.len() < 2 {
+                    let aliases = unsafe { &STATE.get().unwrap().aliases };
+                    for alias in aliases {
+                        println!("Alias: {:?}", alias);
+                    }
+                    return Ok(Some(CommandResult { output: None }));
+                }
+                let mut args = args.iter();
+                let alias = eval_arg(args.next().unwrap())?;
+                let command = eval_arg(args.next().unwrap())?;
+                let args = args.cloned().collect();
+
+                let aliasdef = Alias {
+                    alias: alias.to_owned(),
+                    command: command.to_owned(),
+                    args,
+                };
+
+                unsafe { STATE.get_mut().unwrap().aliases.insert(alias, aliasdef) };
+
                 Some(CommandResult { output: None })
             }
             "exit" => {
@@ -136,14 +159,14 @@ impl Command {
                 if let Some(result) = run_builtin(self)? {
                     return Ok(result);
                 }
-                let (command, args) = if let Some(alias) = STATE.get().unwrap().aliases.get(command)
-                {
-                    let mut merged_args = alias.args.clone();
-                    merged_args.append(&mut args.clone());
-                    (alias.command.clone(), merged_args)
-                } else {
-                    (command.clone(), args.clone())
-                };
+                let (command, args) =
+                    if let Some(alias) = unsafe { STATE.get().unwrap().aliases.get(command) } {
+                        let mut merged_args = alias.args.clone();
+                        merged_args.append(&mut args.clone());
+                        (alias.command.clone(), merged_args)
+                    } else {
+                        (command.clone(), args.clone())
+                    };
                 let args = args.iter().map(eval_arg).collect::<Result<Vec<_>>>()?;
                 let output = OsCommand::new(command)
                     .args(args)

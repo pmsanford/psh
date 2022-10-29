@@ -12,7 +12,7 @@ use parser::{parse_alias, parse_pest};
 use rustyline::{CompletionType, Editor};
 use state::{Alias, State};
 
-static STATE: OnceCell<State> = OnceCell::new();
+static mut STATE: OnceCell<State> = OnceCell::new();
 
 fn path_prompt() -> Result<String> {
     let ud = UserDirs::new().ok_or_else(|| anyhow::anyhow!("Couldn't find user dirs"))?;
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
     history.push(".psh_history");
     rl.load_history(&history)?;
     let mut prompt_extra = String::from("");
-    STATE.set(load_state()?);
+    unsafe { STATE.set(load_state()?).ok() };
 
     loop {
         let pwd = path_prompt()?;
