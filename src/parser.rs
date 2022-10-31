@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use anyhow::Result;
 use pest::{
     iterators::{Pair, Pairs},

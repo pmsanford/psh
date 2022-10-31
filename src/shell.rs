@@ -9,10 +9,7 @@ use rustyline::{
 };
 use rustyline_derive::{Completer, Helper, Highlighter, Hinter, Validator};
 
-use crate::{
-    parser::{parse_alias, parse_pest},
-    state::{Alias, State},
-};
+use crate::{parser::parse_pest, state::State};
 
 fn path_prompt() -> Result<String> {
     let ud = UserDirs::new().ok_or_else(|| anyhow::anyhow!("Couldn't find user dirs"))?;
@@ -34,37 +31,44 @@ fn path_prompt() -> Result<String> {
 }
 
 fn load_state() -> Result<State> {
-    let aliases = load_aliases()?;
     let ud = UserDirs::new().expect("user dirs");
     let mut history_path = PathBuf::from(ud.home_dir());
     history_path.push(".psh_history");
-    Ok(State {
-        aliases,
+    let mut state = State {
+        aliases: HashMap::new(),
         history_path,
-    })
+    };
+
+    run_rc(&mut state)?;
+
+    Ok(state)
 }
 
-fn load_aliases() -> Result<HashMap<String, Alias>> {
+fn run_rc(state: &mut State) -> Result<()> {
     let pd = ProjectDirs::from("net", "paulsanford", "psh").expect("project dirs");
-    let mut aliases = PathBuf::from(pd.config_dir());
-    aliases.push("aliases");
+    let mut rc = PathBuf::from(pd.config_dir());
+    rc.push("pshrc");
 
-    if !aliases.exists() {
-        return Ok(HashMap::new());
+    if !rc.exists() {
+        return Ok(());
     }
 
-    let mut file = File::open(aliases)?;
+    let mut file = File::open(rc)?;
     let mut cont = String::new();
     file.read_to_string(&mut cont)?;
 
-    let mut hm = HashMap::new();
-
-    for line in cont.lines() {
-        let alias = parse_alias(line)?;
-        hm.insert(alias.alias.clone(), alias);
+    for (num, line) in cont.lines().enumerate() {
+        let parsed =
+            parse_pest(line).map(|parsed| parsed.run(Stdio::null(), Stdio::inherit(), state));
+        match parsed {
+            Err(e) | Ok(Err(e)) => {
+                eprintln!("Error on line {} of rc file: {}", num, e);
+            }
+            _ => {}
+        }
     }
 
-    Ok(hm)
+    Ok(())
 }
 
 #[derive(Completer, Helper, Validator, Highlighter, Hinter)]
