@@ -14,3 +14,8 @@ pest = "2.4.0"
 pest_derive = "2.4.0"
 rustyline = "10.0.0"
 rustyline-derive = "0.7.0"
+protos = { path = "../protos" }
+tonic = "0.8.2"
+tokio = { version = "1.21.2", features = ["rt-multi-thread", "macros", "net"] }
+async-stream = "0.3.3"
+tokio-stream = { version = "0.1.11", features = ["net"] }
