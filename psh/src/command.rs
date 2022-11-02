@@ -42,9 +42,10 @@ async fn run_builtin(
                                 if let Ok(resp) = client.get_status(request).await {
                                     let resp = resp.into_inner();
                                     println!(
-                                        "{}: {}",
+                                        "{}: {} ({})",
                                         dir.file_name().to_string_lossy(),
-                                        resp.current_command
+                                        resp.current_command,
+                                        resp.working_dir
                                     );
                                 }
                             }

@@ -10,4 +10,5 @@ service Status {
 
 message GetStatusResponse {
   string current_command = 1;
+  string working_dir = 2;
 }

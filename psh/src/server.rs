@@ -21,11 +21,16 @@ struct StatusListener {
 impl StatusTrait for StatusListener {
     async fn get_status(&self, _req: Request<()>) -> Result<Response<GetStatusResponse>, Status> {
         let state = self.state.lock().unwrap();
+        let working_dir = std::env::current_dir()
+            .map(|wd| wd.to_string_lossy().to_string())
+            .unwrap_or_else(|_| String::from("<none>"))
+            .to_string();
         Ok(Response::new(GetStatusResponse {
             current_command: state
                 .current_command
                 .clone()
                 .unwrap_or_else(|| String::from("<none>")),
+            working_dir,
         }))
     }
 }
