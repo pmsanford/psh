@@ -11,9 +11,9 @@ use shell::Pshell;
 #[tokio::main]
 async fn main() -> Result<()> {
     tokio::spawn(start_env_service());
-    let mut shell = Pshell::new()?;
+    let mut shell = Pshell::new().await?;
 
-    shell.run()?;
+    shell.run().await?;
 
     Ok(())
 }

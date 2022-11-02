@@ -30,7 +30,7 @@ fn path_prompt() -> Result<String> {
     }
 }
 
-fn load_state() -> Result<State> {
+async fn load_state() -> Result<State> {
     let ud = UserDirs::new().expect("user dirs");
     let mut history_path = PathBuf::from(ud.home_dir());
     history_path.push(".psh_history");
@@ -39,12 +39,12 @@ fn load_state() -> Result<State> {
         history_path,
     };
 
-    run_rc(&mut state)?;
+    run_rc(&mut state).await?;
 
     Ok(state)
 }
 
-fn run_rc(state: &mut State) -> Result<()> {
+async fn run_rc(state: &mut State) -> Result<()> {
     let pd = ProjectDirs::from("net", "paulsanford", "psh").expect("project dirs");
     let mut rc = PathBuf::from(pd.config_dir());
     rc.push("pshrc");
@@ -58,13 +58,15 @@ fn run_rc(state: &mut State) -> Result<()> {
     file.read_to_string(&mut cont)?;
 
     for (num, line) in cont.lines().enumerate() {
-        let parsed =
-            parse_pest(line).map(|parsed| parsed.run(Stdio::null(), Stdio::inherit(), state));
-        match parsed {
-            Err(e) | Ok(Err(e)) => {
+        match parse_pest(line) {
+            Ok(parsed) => {
+                if let Err(e) = parsed.run(Stdio::null(), Stdio::inherit(), state).await {
+                    eprintln!("Error on line {} of rc file: {}", num, e);
+                }
+            }
+            Err(e) => {
                 eprintln!("Error on line {} of rc file: {}", num, e);
             }
-            _ => {}
         }
     }
 
@@ -95,8 +97,8 @@ pub struct Pshell {
 }
 
 impl Pshell {
-    pub fn new() -> Result<Self> {
-        let state = load_state()?;
+    pub async fn new() -> Result<Self> {
+        let state = load_state().await?;
         let config = rustyline::Config::builder()
             .max_history_size(100)
             .auto_add_history(true)
@@ -116,7 +118,7 @@ impl Pshell {
         Ok(Self { state, editor })
     }
 
-    pub fn run(&mut self) -> Result<()> {
+    pub async fn run(&mut self) -> Result<()> {
         let mut prompt_extra = String::from("");
 
         loop {
@@ -135,7 +137,9 @@ impl Pshell {
             let command_line = parse_pest(&input_line);
             match command_line {
                 Ok(command) => {
-                    let output = command.run(Stdio::inherit(), Stdio::inherit(), &mut self.state);
+                    let output = command
+                        .run(Stdio::inherit(), Stdio::inherit(), &mut self.state)
+                        .await;
 
                     match output {
                         Ok(output) => {

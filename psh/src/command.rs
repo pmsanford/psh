@@ -1,24 +1,66 @@
 use anyhow::{bail, Result};
+use async_recursion::async_recursion;
+use protos::{create_channel, env_client::EnvClient, sock_path_from_pid};
 use std::{
+    collections::HashMap,
     env,
     fmt::Display,
     fs::File,
     path::Path,
     process::{exit, Child, Command as OsCommand, Stdio},
 };
+use tonic::Request;
 
 use crate::state::{Alias, State};
 
-fn run_builtin(command: &Command, state: &mut State) -> Result<Option<CommandResult>> {
+async fn run_builtin(command: &Command, state: &mut State) -> Result<Option<CommandResult>> {
     Ok(match command {
         Command::Simple { command, args } => match command.as_str() {
+            "diffenv" => {
+                if args.len() != 1 {
+                    eprintln!("diffenv requires a process id");
+                }
+
+                let arg = args.iter().next().unwrap();
+                let pid = eval_arg(&arg, state).await?;
+                let pid: u32 = pid.parse()?;
+
+                let sock_path = sock_path_from_pid(pid);
+
+                let channel = create_channel(sock_path).await?;
+
+                let mut client = EnvClient::new(channel);
+
+                let request = Request::new(());
+
+                let resp = client.get_env(request).await?.into_inner();
+
+                let local_vars = std::env::vars().into_iter().collect::<HashMap<_, _>>();
+
+                for var in resp.vars {
+                    let local = local_vars.get(&var.key);
+
+                    if let Some(local) = local {
+                        if *local != var.value {
+                            println!(" {}:", var.key);
+                            println!("\tLocal:  {}", local);
+                            println!("\tTheirs: {}", var.value);
+                        }
+                    } else {
+                        println!("+{}: {}", var.key, var.value);
+                    }
+                }
+
+                Some(CommandResult { output: None })
+            }
             "cd" => {
                 let new_directory = args.first();
-                let new_directory = new_directory
-                    .map(|a| eval_arg(a, state))
-                    .transpose()?
-                    .or_else(|| env::var("HOME").ok())
-                    .unwrap_or_else(|| String::from("/"));
+                let new_directory = if let Some(arg) = new_directory {
+                    Some(eval_arg(arg, state).await?)
+                } else {
+                    env::var("HOME").ok()
+                }
+                .unwrap_or_else(|| String::from("/"));
                 let new_directory = sub_var(&new_directory);
                 let newpath = Path::new(&new_directory);
                 if let Err(e) = env::set_current_dir(newpath) {
@@ -36,7 +78,7 @@ fn run_builtin(command: &Command, state: &mut State) -> Result<Option<CommandRes
                     let value = args
                         .next()
                         .ok_or_else(|| anyhow::anyhow!("Set requires a key and value"))?;
-                    let value = eval_arg(value, state)?;
+                    let value = eval_arg(value, state).await?;
                     env::set_var(key, value.trim());
                 } else {
                     bail!("Key must be a string");
@@ -51,8 +93,8 @@ fn run_builtin(command: &Command, state: &mut State) -> Result<Option<CommandRes
                     return Ok(Some(CommandResult { output: None }));
                 }
                 let mut args = args.iter();
-                let alias = eval_arg(args.next().unwrap(), state)?;
-                let command = eval_arg(args.next().unwrap(), state)?;
+                let alias = eval_arg(args.next().unwrap(), state).await?;
+                let command = eval_arg(args.next().unwrap(), state).await?;
                 let args = args.cloned().collect();
 
                 let aliasdef = Alias {
@@ -137,13 +179,14 @@ fn sub_var(arg: &str) -> String {
     }
 }
 
-fn eval_arg(arg: &Arg, state: &mut State) -> Result<String> {
+async fn eval_arg(arg: &Arg, state: &mut State) -> Result<String> {
     Ok(match arg {
         Arg::String { arg_string } => arg_string.clone(),
         Arg::Env { var_name } => env::var(var_name)?,
         Arg::Subcommand { command } => {
             let output = command
-                .run(Stdio::null(), Stdio::piped(), state)?
+                .run(Stdio::null(), Stdio::piped(), state)
+                .await?
                 .output
                 .ok_or_else(|| anyhow::anyhow!("Error running subcomand"))?
                 .wait_with_output()?;
@@ -160,13 +203,19 @@ fn eval_arg(arg: &Arg, state: &mut State) -> Result<String> {
 }
 
 impl Command {
-    pub fn run(&self, stdin: Stdio, stdout: Stdio, state: &mut State) -> Result<CommandResult> {
+    #[async_recursion]
+    pub async fn run(
+        &self,
+        stdin: Stdio,
+        stdout: Stdio,
+        state: &mut State,
+    ) -> Result<CommandResult> {
         Ok(match self {
             Command::Simple { command, args } => {
                 if command.is_empty() {
                     return Ok(CommandResult { output: None });
                 }
-                if let Some(result) = run_builtin(self, state)? {
+                if let Some(result) = run_builtin(self, state).await? {
                     return Ok(result);
                 }
                 let (command, args) = if let Some(alias) = state.aliases.get(command) {
@@ -176,12 +225,12 @@ impl Command {
                 } else {
                     (command.clone(), args.clone())
                 };
-                let args = args
-                    .iter()
-                    .map(|a| eval_arg(a, state))
-                    .collect::<Result<Vec<_>>>()?;
+                let mut arg_vec = vec![];
+                for arg in args {
+                    arg_vec.push(eval_arg(&arg, state).await?);
+                }
                 let output = OsCommand::new(command)
-                    .args(args)
+                    .args(arg_vec)
                     .stdin(stdin)
                     .stdout(stdout)
                     .spawn()?;
@@ -202,12 +251,12 @@ impl Command {
                         if let Some(redirect) = redirect {
                             let file = File::create(redirect)?;
                             let fileout = Stdio::from(file);
-                            return command.run(stdin, fileout, state);
+                            return command.run(stdin, fileout, state).await;
                         }
-                        return command.run(stdin, stdout, state);
+                        return command.run(stdin, stdout, state).await;
                     }
 
-                    let mut last = command.run(stdin, Stdio::piped(), state)?;
+                    let mut last = command.run(stdin, Stdio::piped(), state).await?;
 
                     stdin = last.stdout().unwrap_or_else(Stdio::null);
                 }
@@ -215,7 +264,7 @@ impl Command {
                 unreachable!()
             }
             Command::And { left, right } => {
-                let lresult = left.run(stdin, Stdio::inherit(), state)?;
+                let lresult = left.run(stdin, Stdio::inherit(), state).await?;
                 let mut output = lresult.output.unwrap();
 
                 if !output.wait()?.success() {
@@ -224,10 +273,10 @@ impl Command {
                     });
                 }
 
-                right.run(Stdio::null(), Stdio::inherit(), state)?
+                right.run(Stdio::null(), Stdio::inherit(), state).await?
             }
             Command::Or { left, right } => {
-                let lresult = left.run(stdin, Stdio::inherit(), state)?;
+                let lresult = left.run(stdin, Stdio::inherit(), state).await?;
                 let mut output = lresult.output.unwrap();
 
                 if output.wait()?.success() {
@@ -235,7 +284,7 @@ impl Command {
                         output: Some(output),
                     }
                 } else {
-                    right.run(Stdio::null(), Stdio::inherit(), state)?
+                    right.run(Stdio::null(), Stdio::inherit(), state).await?
                 }
             }
         })

@@ -1,9 +1,8 @@
-use std::path::PathBuf;
-
 use anyhow::Result;
 use protos::{
+    create_sock_path,
     env_server::{Env, EnvServer},
-    EnvVar,
+    EnvVar, GetEnvResponse,
 };
 use tokio::net::UnixListener;
 use tokio_stream::wrappers::UnixListenerStream;
@@ -19,15 +18,20 @@ impl Env for EnvListener {
 
         Ok(Response::new(()))
     }
+
+    async fn get_env(&self, _req: Request<()>) -> Result<Response<GetEnvResponse>, Status> {
+        let mut vars = vec![];
+
+        for (key, value) in std::env::vars() {
+            vars.push(EnvVar { key, value });
+        }
+
+        Ok(Response::new(GetEnvResponse { vars }))
+    }
 }
 
 pub async fn start_env_service() -> Result<()> {
-    let mut sock_path = PathBuf::from("/tmp/psh/");
-    sock_path.push(std::process::id().to_string());
-    if !sock_path.exists() {
-        std::fs::create_dir_all(&sock_path)?;
-    }
-    sock_path.push("service.sock");
+    let sock_path = create_sock_path()?;
     std::env::set_var("PSH_SERVICE_SOCK", sock_path.to_string_lossy().to_string());
     let env_listener = EnvListener;
 
