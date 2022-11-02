@@ -37,6 +37,7 @@ async fn load_state() -> Result<State> {
     let mut state = State {
         aliases: HashMap::new(),
         history_path,
+        current_command: None,
     };
 
     run_rc(&mut state).await?;

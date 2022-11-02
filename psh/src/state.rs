@@ -27,4 +27,5 @@ impl Alias {
 pub struct State {
     pub aliases: HashMap<String, Alias>,
     pub history_path: PathBuf,
+    pub current_command: Option<String>,
 }

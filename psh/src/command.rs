@@ -246,11 +246,13 @@ impl Command {
                 for arg in args {
                     arg_vec.push(eval_arg(&arg, state).await?);
                 }
+                state.current_command = Some(command.clone());
                 let output = OsCommand::new(command)
                     .args(arg_vec)
                     .stdin(stdin)
                     .stdout(stdout)
                     .spawn()?;
+                state.current_command = None;
 
                 CommandResult {
                     output: Some(output),
