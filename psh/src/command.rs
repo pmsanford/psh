@@ -22,6 +22,41 @@ async fn run_builtin(
 ) -> Result<Option<CommandResult>> {
     Ok(match command {
         Command::Simple { command, args } => match command.as_str() {
+            "copyenv" => {
+                if args.len() != 2 {
+                    eprintln!("copyenv takes a pid and a var name");
+                    return Ok(Some(CommandResult { output: None }));
+                }
+                let mut args = args.iter();
+                let arg = args.next().unwrap();
+                let pid = eval_arg(&arg, &state).await?;
+                let pid: u32 = pid.parse()?;
+                let key = args.next().unwrap();
+                let key = eval_arg(&key, &state).await?;
+
+                let sock_path = sock_path_from_pid(pid);
+
+                let channel = create_channel(sock_path).await?;
+
+                let mut client = EnvClient::new(channel);
+
+                let request = Request::new(());
+
+                let resp = client.get_env(request).await?.into_inner();
+
+                let vars = resp
+                    .vars
+                    .into_iter()
+                    .map(|var| (var.key, var.value))
+                    .collect::<HashMap<_, _>>();
+
+                std::env::set_var(
+                    key.clone(),
+                    vars.get(&key).map(|v| v.clone()).unwrap_or_default(),
+                );
+
+                Some(CommandResult { output: None })
+            }
             "pshl" => {
                 if args.len() != 0 {
                     eprintln!("pshl doesn't take any args");
@@ -33,6 +68,9 @@ async fn run_builtin(
                 for dir in std::fs::read_dir(psh_path)? {
                     if let Ok(dir) = dir {
                         if let Ok(pid) = dir.file_name().to_string_lossy().parse::<u32>() {
+                            if pid == std::process::id() {
+                                continue;
+                            }
                             let sock_path = sock_path_from_pid(pid);
                             if let Ok(channel) = create_channel(sock_path).await {
                                 let mut client = StatusClient::new(channel);
