@@ -6,7 +6,7 @@ use std::{
     env,
     fmt::Display,
     fs::File,
-    path::Path,
+    path::{Path, PathBuf},
     process::{exit, Child, Command as OsCommand, Stdio},
 };
 use tonic::Request;
@@ -16,9 +16,26 @@ use crate::state::{Alias, State};
 async fn run_builtin(command: &Command, state: &mut State) -> Result<Option<CommandResult>> {
     Ok(match command {
         Command::Simple { command, args } => match command.as_str() {
+            "pshl" => {
+                if args.len() != 0 {
+                    eprintln!("pshl doesn't take any args");
+                    return Ok(Some(CommandResult { output: None }));
+                }
+
+                let psh_path = PathBuf::from("/tmp/psh");
+
+                for dir in std::fs::read_dir(psh_path)? {
+                    if let Ok(dir) = dir {
+                        println!("{}", dir.file_name().to_string_lossy());
+                    }
+                }
+
+                Some(CommandResult { output: None })
+            }
             "diffenv" => {
                 if args.len() != 1 {
                     eprintln!("diffenv requires a process id");
+                    return Ok(Some(CommandResult { output: None }));
                 }
 
                 let arg = args.iter().next().unwrap();
