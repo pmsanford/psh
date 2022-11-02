@@ -1,6 +1,8 @@
 use anyhow::{bail, Result};
 use async_recursion::async_recursion;
-use protos::{create_channel, env_client::EnvClient, sock_path_from_pid};
+use protos::{
+    create_channel, env_client::EnvClient, sock_path_from_pid, status_client::StatusClient,
+};
 use std::{
     collections::HashMap,
     env,
@@ -8,12 +10,16 @@ use std::{
     fs::File,
     path::{Path, PathBuf},
     process::{exit, Child, Command as OsCommand, Stdio},
+    sync::{Arc, Mutex},
 };
 use tonic::Request;
 
 use crate::state::{Alias, State};
 
-async fn run_builtin(command: &Command, state: &mut State) -> Result<Option<CommandResult>> {
+async fn run_builtin(
+    command: &Command,
+    state: &Arc<Mutex<State>>,
+) -> Result<Option<CommandResult>> {
     Ok(match command {
         Command::Simple { command, args } => match command.as_str() {
             "pshl" => {
@@ -26,7 +32,23 @@ async fn run_builtin(command: &Command, state: &mut State) -> Result<Option<Comm
 
                 for dir in std::fs::read_dir(psh_path)? {
                     if let Ok(dir) = dir {
-                        println!("{}", dir.file_name().to_string_lossy());
+                        if let Ok(pid) = dir.file_name().to_string_lossy().parse::<u32>() {
+                            let sock_path = sock_path_from_pid(pid);
+                            if let Ok(channel) = create_channel(sock_path).await {
+                                let mut client = StatusClient::new(channel);
+
+                                let request = Request::new(());
+
+                                if let Ok(resp) = client.get_status(request).await {
+                                    let resp = resp.into_inner();
+                                    println!(
+                                        "{}: {}",
+                                        dir.file_name().to_string_lossy(),
+                                        resp.current_command
+                                    );
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -39,7 +61,7 @@ async fn run_builtin(command: &Command, state: &mut State) -> Result<Option<Comm
                 }
 
                 let arg = args.iter().next().unwrap();
-                let pid = eval_arg(&arg, state).await?;
+                let pid = eval_arg(&arg, &state).await?;
                 let pid: u32 = pid.parse()?;
 
                 let sock_path = sock_path_from_pid(pid);
@@ -104,7 +126,8 @@ async fn run_builtin(command: &Command, state: &mut State) -> Result<Option<Comm
             }
             "alias" => {
                 if args.len() < 2 {
-                    for (_, alias) in state.aliases.iter() {
+                    let aliases = state.lock().unwrap().aliases.clone();
+                    for (_, alias) in aliases.iter() {
                         println!("{}", alias.display());
                     }
                     return Ok(Some(CommandResult { output: None }));
@@ -120,7 +143,7 @@ async fn run_builtin(command: &Command, state: &mut State) -> Result<Option<Comm
                     args,
                 };
 
-                state.aliases.insert(alias, aliasdef);
+                state.lock().unwrap().aliases.insert(alias, aliasdef);
 
                 Some(CommandResult { output: None })
             }
@@ -196,7 +219,7 @@ fn sub_var(arg: &str) -> String {
     }
 }
 
-async fn eval_arg(arg: &Arg, state: &mut State) -> Result<String> {
+async fn eval_arg(arg: &Arg, state: &Arc<Mutex<State>>) -> Result<String> {
     Ok(match arg {
         Arg::String { arg_string } => arg_string.clone(),
         Arg::Env { var_name } => env::var(var_name)?,
@@ -225,7 +248,7 @@ impl Command {
         &self,
         stdin: Stdio,
         stdout: Stdio,
-        state: &mut State,
+        state: &Arc<Mutex<State>>,
     ) -> Result<CommandResult> {
         Ok(match self {
             Command::Simple { command, args } => {
@@ -235,24 +258,26 @@ impl Command {
                 if let Some(result) = run_builtin(self, state).await? {
                     return Ok(result);
                 }
-                let (command, args) = if let Some(alias) = state.aliases.get(command) {
-                    let mut merged_args = alias.args.clone();
-                    merged_args.append(&mut args.clone());
-                    (alias.command.clone(), merged_args)
-                } else {
-                    (command.clone(), args.clone())
-                };
+                let (command, args) =
+                    if let Some(alias) = state.lock().unwrap().aliases.get(command) {
+                        let mut merged_args = alias.args.clone();
+                        merged_args.append(&mut args.clone());
+                        (alias.command.clone(), merged_args)
+                    } else {
+                        (command.clone(), args.clone())
+                    };
                 let mut arg_vec = vec![];
                 for arg in args {
                     arg_vec.push(eval_arg(&arg, state).await?);
                 }
-                state.current_command = Some(command.clone());
+                {
+                    state.lock().unwrap().current_command = Some(command.clone());
+                }
                 let output = OsCommand::new(command)
                     .args(arg_vec)
                     .stdin(stdin)
                     .stdout(stdout)
                     .spawn()?;
-                state.current_command = None;
 
                 CommandResult {
                     output: Some(output),

@@ -2,7 +2,7 @@ use std::{collections::HashMap, path::PathBuf};
 
 use crate::command::Arg;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Alias {
     pub alias: String,
     pub command: String,
@@ -24,6 +24,7 @@ impl Alias {
     }
 }
 
+#[derive(Debug)]
 pub struct State {
     pub aliases: HashMap<String, Alias>,
     pub history_path: PathBuf,

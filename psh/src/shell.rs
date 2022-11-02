@@ -1,4 +1,13 @@
-use std::{collections::HashMap, env, fs::File, io::Read, path::PathBuf, process::Stdio};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    env,
+    fs::File,
+    io::Read,
+    path::PathBuf,
+    process::Stdio,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Result;
 use directories::{ProjectDirs, UserDirs};
@@ -30,22 +39,22 @@ fn path_prompt() -> Result<String> {
     }
 }
 
-async fn load_state() -> Result<State> {
+async fn load_state() -> Result<Arc<Mutex<State>>> {
     let ud = UserDirs::new().expect("user dirs");
     let mut history_path = PathBuf::from(ud.home_dir());
     history_path.push(".psh_history");
-    let mut state = State {
+    let state = Arc::new(Mutex::new(State {
         aliases: HashMap::new(),
         history_path,
         current_command: None,
-    };
+    }));
 
-    run_rc(&mut state).await?;
+    run_rc(&state).await?;
 
     Ok(state)
 }
 
-async fn run_rc(state: &mut State) -> Result<()> {
+async fn run_rc(state: &Arc<Mutex<State>>) -> Result<()> {
     let pd = ProjectDirs::from("net", "paulsanford", "psh").expect("project dirs");
     let mut rc = PathBuf::from(pd.config_dir());
     rc.push("pshrc");
@@ -61,7 +70,7 @@ async fn run_rc(state: &mut State) -> Result<()> {
     for (num, line) in cont.lines().enumerate() {
         match parse_pest(line) {
             Ok(parsed) => {
-                if let Err(e) = parsed.run(Stdio::null(), Stdio::inherit(), state).await {
+                if let Err(e) = parsed.run(Stdio::null(), Stdio::inherit(), &state).await {
                     eprintln!("Error on line {} of rc file: {}", num, e);
                 }
             }
@@ -93,11 +102,15 @@ impl Highlighter for PshHighlighter {
 }
 
 pub struct Pshell {
-    state: State,
+    state: Arc<Mutex<State>>,
     editor: Editor<PshHelper>,
 }
 
 impl Pshell {
+    pub fn get_state_ref(&self) -> Arc<Mutex<State>> {
+        Arc::clone(&self.state)
+    }
+
     pub async fn new() -> Result<Self> {
         let state = load_state().await?;
         let config = rustyline::Config::builder()
@@ -114,7 +127,7 @@ impl Pshell {
         };
         let mut editor = Editor::<PshHelper>::with_config(config)?;
         editor.set_helper(Some(h));
-        editor.load_history(&state.history_path)?;
+        editor.load_history(&state.lock().unwrap().history_path)?;
 
         Ok(Self { state, editor })
     }
@@ -127,7 +140,10 @@ impl Pshell {
             let result = self
                 .editor
                 .readline(&format!("> {} >{} ", pwd, prompt_extra));
-            self.editor.save_history(&self.state.history_path)?;
+            {
+                let state = self.state.lock().unwrap();
+                self.editor.save_history(&state.history_path)?;
+            }
 
             let input_line = match result {
                 Err(rustyline::error::ReadlineError::Eof) => break,
@@ -139,13 +155,14 @@ impl Pshell {
             match command_line {
                 Ok(command) => {
                     let output = command
-                        .run(Stdio::inherit(), Stdio::inherit(), &mut self.state)
+                        .run(Stdio::inherit(), Stdio::inherit(), &self.state)
                         .await;
 
                     match output {
                         Ok(output) => {
                             if let Some(mut output) = output.output {
                                 let exit = output.wait()?;
+                                self.state.lock().unwrap().current_command = None;
                                 if exit.success() {
                                     prompt_extra = String::from("");
                                 } else {

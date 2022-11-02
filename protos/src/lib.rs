@@ -1,5 +1,6 @@
 tonic::include_proto!("env");
-use std::{fs::create_dir_all, path::PathBuf};
+tonic::include_proto!("status");
+use std::{fs::create_dir_all, path::PathBuf, time::Duration};
 
 use anyhow::{anyhow, bail, Result};
 use tokio::net::UnixStream;
@@ -31,6 +32,7 @@ pub async fn create_channel(sock_path: PathBuf) -> Result<Channel> {
         bail!("Socket does not exist");
     }
     Ok(Endpoint::try_from("http://[::]:50051")?
+        .timeout(Duration::from_secs(1))
         .connect_with_connector(service_fn(move |_: Uri| {
             let sock_path = sock_path.clone();
             UnixStream::connect(sock_path)

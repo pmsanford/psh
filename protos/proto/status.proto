@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package status;
+
+import "google/protobuf/empty.proto";
+
+service Status {
+  rpc GetStatus(google.protobuf.Empty) returns (GetStatusResponse) {}
+}
+
+message GetStatusResponse {
+  string current_command = 1;
+}
