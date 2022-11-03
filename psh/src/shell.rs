@@ -46,6 +46,7 @@ async fn load_state() -> Result<Arc<Mutex<State>>> {
         aliases: HashMap::new(),
         history_path,
         current_command: None,
+        running_pid: None,
     }));
 
     run_rc(&state).await?;
@@ -146,6 +147,7 @@ impl Pshell {
 
             let input_line = match result {
                 Err(rustyline::error::ReadlineError::Eof) => break,
+                Err(rustyline::error::ReadlineError::Interrupted) => continue,
                 Err(e) => anyhow::bail!(e),
                 Ok(i) => i,
             };
@@ -162,11 +164,13 @@ impl Pshell {
                             if let Some(mut output) = output.output {
                                 let exit = output.wait()?;
                                 self.state.lock().unwrap().current_command = None;
+                                self.state.lock().unwrap().running_pid = None;
                                 if exit.success() {
                                     prompt_extra = String::from("");
                                 } else {
-                                    let code = exit.code().unwrap();
-                                    prompt_extra = format!("{}>", code.white().on_red());
+                                    if let Some(code) = exit.code() {
+                                        prompt_extra = format!("{}>", code.white().on_red());
+                                    }
                                 }
                             }
                         }

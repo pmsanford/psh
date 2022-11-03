@@ -309,14 +309,13 @@ impl Command {
                 for arg in args {
                     arg_vec.push(eval_arg(&arg, state).await?);
                 }
-                {
-                    state.lock().unwrap().current_command = Some(command.clone());
-                }
+                state.lock().unwrap().current_command = Some(command.clone());
                 let output = OsCommand::new(command)
                     .args(arg_vec)
                     .stdin(stdin)
                     .stdout(stdout)
                     .spawn()?;
+                state.lock().unwrap().running_pid = Some(output.id());
 
                 CommandResult {
                     output: Some(output),
