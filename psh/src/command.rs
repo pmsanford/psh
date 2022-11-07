@@ -144,7 +144,10 @@ async fn run_builtin(
                 if let Err(e) = env::set_current_dir(newpath) {
                     eprintln!("{}", e);
                 }
-                env::set_var("PWD", newpath);
+                env::set_var(
+                    "PWD",
+                    env::current_dir().unwrap().to_string_lossy().to_string(),
+                );
 
                 Some(CommandResult { output: None })
             }
