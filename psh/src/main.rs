@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use nix::libc::SIGINT;
-use plugins::get_prompt;
+use plugins::get_prompt_plugin;
 use server::start_services;
 use shell::Pshell;
 use signal_hook_tokio::Signals;
@@ -44,8 +44,8 @@ impl SigHandler {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!("Prompt: {}", get_prompt()?);
-    let mut shell = Pshell::new().await?;
+    let prompt_plugin = get_prompt_plugin()?;
+    let mut shell = Pshell::new(prompt_plugin).await?;
     tokio::spawn(start_services(shell.get_state_ref()));
     let sighandler = Box::leak(Box::new(SigHandler::new(shell.get_state_ref())));
     tokio::spawn(sighandler.handle_signals());

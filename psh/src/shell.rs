@@ -17,7 +17,7 @@ use rustyline::{
 };
 use rustyline_derive::{Completer, Helper, Highlighter, Hinter, Validator};
 
-use crate::{parser::parse_pest, state::State};
+use crate::{parser::parse_pest, plugins::Plugin, state::State};
 
 fn path_prompt() -> Result<String> {
     let ud = UserDirs::new().ok_or_else(|| anyhow::anyhow!("Couldn't find user dirs"))?;
@@ -104,6 +104,7 @@ impl Highlighter for PshHighlighter {
 pub struct Pshell {
     state: Arc<Mutex<State>>,
     editor: Editor<PshHelper>,
+    prompt_plugin: Plugin,
 }
 
 impl Pshell {
@@ -111,7 +112,7 @@ impl Pshell {
         Arc::clone(&self.state)
     }
 
-    pub async fn new() -> Result<Self> {
+    pub async fn new(prompt_plugin: Plugin) -> Result<Self> {
         let state = load_state().await?;
         let config = rustyline::Config::builder()
             .max_history_size(100)
@@ -129,14 +130,18 @@ impl Pshell {
         editor.set_helper(Some(h));
         editor.load_history(&state.lock().unwrap().history_path)?;
 
-        Ok(Self { state, editor })
+        Ok(Self {
+            state,
+            editor,
+            prompt_plugin,
+        })
     }
 
     pub async fn run(&mut self) -> Result<()> {
         let mut prompt_extra = String::from("");
 
         loop {
-            let pwd = path_prompt()?;
+            let pwd = self.prompt_plugin.call_prompt()?;
             let result = self
                 .editor
                 .readline(&format!("> {} >{} ", pwd, prompt_extra));

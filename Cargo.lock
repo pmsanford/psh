@@ -1303,6 +1303,7 @@ name = "prompt"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "owo-colors",
  "plugin-protos",
 ]
 

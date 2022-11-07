@@ -10,4 +10,5 @@ crate-type = ['cdylib']
 
 [dependencies]
 bytes = "1.2.1"
+owo-colors = "3.5.0"
 plugin-protos = { version = "0.1.0", path = "../plugin-protos" }
