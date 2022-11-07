@@ -1,4 +1,10 @@
 [workspace]
 
-members = ["psh", "utils/setenv", "protos"]
+members = [
+  "utils/setenv", 
+  "plugins/prompt",
+  "plugins/plugin-protos",
+  "protos",
+  "psh", 
+]
 default-members = ["psh"]

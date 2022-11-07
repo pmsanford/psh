@@ -1,5 +1,6 @@
 mod command;
 mod parser;
+mod plugins;
 mod server;
 mod shell;
 mod state;
@@ -8,6 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use nix::libc::SIGINT;
+use plugins::get_prompt;
 use server::start_services;
 use shell::Pshell;
 use signal_hook_tokio::Signals;
@@ -42,6 +44,7 @@ impl SigHandler {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    println!("Prompt: {}", get_prompt()?);
     let mut shell = Pshell::new().await?;
     tokio::spawn(start_services(shell.get_state_ref()));
     let sighandler = Box::leak(Box::new(SigHandler::new(shell.get_state_ref())));

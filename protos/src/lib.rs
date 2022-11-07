@@ -1,5 +1,6 @@
 tonic::include_proto!("env");
 tonic::include_proto!("status");
+pub use prost::Message;
 use std::{fs::create_dir_all, path::PathBuf, time::Duration};
 
 use anyhow::{anyhow, bail, Result};

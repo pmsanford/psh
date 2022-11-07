@@ -23,3 +23,6 @@ async-recursion = "1.0.0"
 nix = "0.25.0"
 signal-hook = "0.3.14"
 signal-hook-tokio = { version = "0.3.1", features = ["futures-v0_3"] }
+wasmtime = "2.0.1"
+wasmtime-wasi = "2.0.1"
+plugin-protos = { version = "0.1.0", path = "../plugins/plugin-protos" }
